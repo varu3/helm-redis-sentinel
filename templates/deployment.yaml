@@ -1,0 +1,73 @@
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: {{ include "redis-sentinel.fullname" . }}
+  labels:
+    app: {{ include "redis-sentinel.name" . }}
+    chart: {{ include "redis-sentinel.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "redis-sentinel.name" . }}
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "redis-sentinel.name" . }}
+        release: {{ .Release.Name }}
+    spec:
+      initContainers:
+        - name: copy-redis-sentinel-config
+          image: busybox
+          command: ['sh', '-c', 'cp /config-volume/* /etc/redis/']
+          volumeMounts:
+            - name: config-volume
+              mountPath: /config-volume
+            - name: config
+              mountPath: /etc/redis
+        - name: chmod-scripts
+          image: busybox
+          command: ['sh', '-c', 'chmod +x /etc/redis/*.sh']
+          volumeMounts:
+            - name: config
+              mountPath: /etc/redis
+      containers:
+        - name: {{ .Chart.Name }}
+          command: ["sh", "-c", "redis-sentinel /etc/redis/sentinel.conf"]
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: redis-sentinel
+              containerPort: 26379
+          volumeMounts:
+            - name: config-volume
+              mountPath: /config-volume
+            - name: config
+              mountPath: /etc/redis
+          env:
+            - name: EXTERNAL_NAME
+              value: {{ .Values.service.ExternalName.monitorName }}
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+      volumes:
+        - name: config-volume
+          configMap:
+            defaultMode: 420
+            name: redis-sentinel-config
+        - name: config
+          emptyDir: {}
+    {{- with .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+    {{- end }}
